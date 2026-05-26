@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Stranger — Anonymous Chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f0e;--surface:#131614;--surface2:#191c1a;--surface3:#1f2320;
+  --border:#262b27;--green:#39e07b;--green-dim:#2ab85f;
+  --green-glow:rgba(57,224,123,0.12);--green-glow2:rgba(57,224,123,0.06);
+  --text:#e8ede9;--text-dim:#7a8c7e;--text-faint:#404d43;
+  --red:#e05c5c;--yellow:#e0c43a;--blue:#5c9ee0;
+  --mono:'Space Mono',monospace;--sans:'DM Sans',sans-serif;
+  --r:10px;--r-sm:6px;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;overflow:hidden}
+
+#app{display:grid;grid-template-columns:260px 1fr;height:100vh}
+
+/* Sidebar */
+#sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+#sidebar-header{padding:22px 20px 16px;border-bottom:1px solid var(--border)}
+.logo{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green);display:flex;align-items:center;gap:8px}
+.logo-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.logo-sub{font-size:11px;color:var(--text-dim);letter-spacing:.5px;margin-top:3px}
+#identity-card{margin:14px 16px 0;padding:10px 12px;background:var(--green-glow2);border:1px solid var(--border);border-radius:var(--r-sm)}
+.identity-label{font-size:10px;font-family:var(--mono);color:var(--text-faint);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px}
+#my-username{font-family:var(--mono);font-size:13px;color:var(--green);font-weight:700}
+.sidebar-section-label{font-size:10px;font-family:var(--mono);color:var(--text-faint);text-transform:uppercase;letter-spacing:1.5px;padding:18px 20px 8px}
+#room-list{list-style:none;padding:0 10px;flex:1;overflow-y:auto}
+.room-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r-sm);cursor:pointer;transition:background .15s;margin-bottom:2px;border:1px solid transparent}
+.room-item:hover{background:var(--surface2)}
+.room-item.active{background:var(--green-glow);border-color:rgba(57,224,123,.2)}
+.room-item.active .room-name{color:var(--green)}
+.room-emoji{font-size:16px;opacity:.7;flex-shrink:0;width:22px;text-align:center}
+.room-info{flex:1;min-width:0}
+.room-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.room-desc{font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.room-count{font-family:var(--mono);font-size:11px;color:var(--text-faint);background:var(--surface3);padding:1px 7px;border-radius:20px;flex-shrink:0}
+.room-item.active .room-count{color:var(--green);background:var(--green-glow)}
+#online-section{border-top:1px solid var(--border);padding:12px 10px;max-height:160px;overflow-y:auto}
+.online-header{font-size:10px;font-family:var(--mono);color:var(--text-faint);text-transform:uppercase;letter-spacing:1.5px;padding:0 10px 8px}
+#online-users-list{list-style:none}
+.online-user{display:flex;align-items:center;gap:8px;padding:4px 10px;border-radius:var(--r-sm)}
+.online-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
+.online-name{font-size:12px;color:var(--text-dim);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.online-name.is-me{color:var(--green)}
+
+/* Main */
+#main{display:grid;grid-template-rows:auto auto 1fr auto auto;background:var(--bg);overflow:hidden}
+#room-header{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface)}
+.room-title-wrap{display:flex;align-items:center;gap:10px}
+.room-header-emoji{font-size:20px}
+.room-header-name{font-size:16px;font-weight:600}
+.room-header-desc{font-size:12px;color:var(--text-dim);margin-top:1px}
+.room-header-count{font-family:var(--mono);font-size:12px;color:var(--green);display:flex;align-items:center;gap:6px}
+.room-header-count::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);display:inline-block}
+
+/* Call bar */
+#call-bar{background:var(--surface2);border-bottom:1px solid var(--border);padding:10px 24px;display:none;align-items:center;gap:12px;flex-wrap:wrap}
+#call-bar.visible{display:flex}
+.call-bar-info{flex:1;font-size:12px;font-family:var(--mono);color:var(--text-dim)}
+.call-bar-info strong{color:var(--green)}
+#btn-join-call{background:var(--green);color:#0d1810;border:none;border-radius:var(--r-sm);padding:6px 14px;font-size:12px;font-family:var(--mono);font-weight:700;cursor:pointer;transition:background .15s}
+#btn-join-call:hover{background:#4fffa0}
+#btn-join-call.in-call{background:var(--red);color:#fff}
+#btn-join-call.in-call:hover{background:#ff7070}
+#btn-mute{background:var(--surface3);color:var(--text);border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 14px;font-size:12px;font-family:var(--mono);cursor:pointer;transition:background .15s;display:none}
+#btn-mute.visible{display:inline-flex;align-items:center;gap:6px}
+#btn-mute.muted{color:var(--yellow);border-color:var(--yellow)}
+
+/* Call participants */
+#call-participants{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.call-avatar{display:flex;align-items:center;gap:5px;background:var(--surface3);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11px;font-family:var(--mono);color:var(--text-dim)}
+.call-avatar.speaking{border-color:var(--green);color:var(--green)}
+.call-avatar-dot{width:6px;height:6px;border-radius:50%;background:var(--text-faint);flex-shrink:0}
+.call-avatar.speaking .call-avatar-dot{background:var(--green);box-shadow:0 0 5px var(--green)}
+
+/* Messages */
+#messages{overflow-y:auto;padding:16px 24px;display:flex;flex-direction:column;gap:0;scroll-behavior:smooth}
+#messages::-webkit-scrollbar{width:4px}
+#messages::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.msg{display:flex;flex-direction:column;padding:8px 0;animation:msg-in .2s ease}
+@keyframes msg-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.msg-header{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
+.msg-user{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green);flex-shrink:0}
+.msg-user.is-me{color:#7de8b0}
+.msg-time{font-family:var(--mono);font-size:10px;color:var(--text-faint)}
+.msg-text{font-size:14px;color:var(--text);line-height:1.55;word-break:break-word}
+.msg-system{text-align:center;padding:6px 0;font-size:11px;font-family:var(--mono);color:var(--text-faint);font-style:italic}
+
+#typing-bar{padding:4px 24px;min-height:22px;font-size:12px;color:var(--text-dim);font-family:var(--mono);font-style:italic;display:flex;align-items:center;gap:6px}
+.typing-dots span{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--green);animation:bounce 1.2s infinite}
+.typing-dots span:nth-child(2){animation-delay:.2s}
+.typing-dots span:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.5}40%{transform:translateY(-5px);opacity:1}}
+
+#input-area{padding:12px 24px 20px;background:var(--surface);border-top:1px solid var(--border)}
+#input-wrap{display:flex;gap:10px;align-items:flex-end}
+#message-input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--sans);font-size:14px;padding:10px 14px;resize:none;outline:none;min-height:44px;max-height:120px;transition:border-color .2s,box-shadow .2s;line-height:1.5}
+#message-input::placeholder{color:var(--text-faint)}
+#message-input:focus{border-color:rgba(57,224,123,.4);box-shadow:0 0 0 3px var(--green-glow2)}
+#send-btn{background:var(--green);color:#0d1810;border:none;border-radius:var(--r);width:44px;height:44px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;transition:background .15s,transform .1s}
+#send-btn:hover{background:#4fffa0}
+#send-btn:active{transform:scale(.93)}
+
+#welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text-faint);text-align:center;padding:40px}
+#welcome .w-emoji{font-size:48px}
+#welcome .w-title{font-family:var(--mono);font-size:18px;color:var(--text-dim)}
+#welcome .w-sub{font-size:13px;max-width:260px}
+
+/* Audio elements hidden */
+#remote-audios{display:none}
+
+#toast{position:fixed;bottom:24px;right:24px;background:var(--surface3);border:1px solid var(--border);color:var(--text);font-size:12px;font-family:var(--mono);padding:10px 16px;border-radius:var(--r);opacity:0;pointer-events:none;transition:opacity .25s;z-index:999}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <div class="logo"><div class="logo-dot"></div>Stranger</div>
+      <div class="logo-sub">anonymous · ephemeral · free</div>
+    </div>
+    <div id="identity-card">
+      <div class="identity-label">You are</div>
+      <div id="my-username">connecting…</div>
+    </div>
+    <div class="sidebar-section-label">Rooms</div>
+    <ul id="room-list"></ul>
+    <div id="online-section">
+      <div class="online-header">In this room</div>
+      <ul id="online-users-list"></ul>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="room-header">
+      <div class="room-title-wrap">
+        <span class="room-header-emoji" id="hdr-emoji">—</span>
+        <div>
+          <div class="room-header-name" id="hdr-name">Pick a room</div>
+          <div class="room-header-desc" id="hdr-desc">choose from the sidebar</div>
+        </div>
+      </div>
+      <div class="room-header-count" id="hdr-count" style="display:none"></div>
+    </div>
+
+    <!-- Call bar -->
+    <div id="call-bar">
+      <div class="call-bar-info" id="call-bar-info">No active call</div>
+      <div id="call-participants"></div>
+      <button id="btn-mute">🎤 Mute</button>
+      <button id="btn-join-call">📞 Join Call</button>
+    </div>
+
+    <div id="messages">
+      <div id="welcome">
+        <div class="w-emoji">👻</div>
+        <div class="w-title">You're anonymous here.</div>
+        <div class="w-sub">Pick a room to chat or start a voice call.</div>
+      </div>
+    </div>
+
+    <div id="typing-bar"></div>
+
+    <div id="input-area">
+      <div id="input-wrap">
+        <textarea id="message-input" rows="1" placeholder="Say something…" disabled></textarea>
+        <button id="send-btn" disabled>↑</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="remote-audios"></div>
+<div id="toast"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────
+const S = {
+  socket: null, myUsername: null, currentRoom: null,
+  rooms: {}, counts: {}, typingUsers: {}, typingTimer: null,
+  // Call state
+  inCall: false, muted: false,
+  localStream: null,
+  peers: {},        // socketId → RTCPeerConnection
+  callInfo: null,
+};
+
+const ICE_SERVERS = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }] };
+
+// ── DOM ───────────────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const roomListEl    = $("room-list");
+const messagesEl    = $("messages");
+const typingBarEl   = $("typing-bar");
+const inputEl       = $("message-input");
+const sendBtn       = $("send-btn");
+const myUsernameEl  = $("my-username");
+const hdrEmoji      = $("hdr-emoji");
+const hdrName       = $("hdr-name");
+const hdrDesc       = $("hdr-desc");
+const hdrCount      = $("hdr-count");
+const onlineListEl  = $("online-users-list");
+const toastEl       = $("toast");
+const callBar       = $("call-bar");
+const callBarInfo   = $("call-bar-info");
+const callPartsEl   = $("call-participants");
+const btnJoinCall   = $("btn-join-call");
+const btnMute       = $("btn-mute");
+const remoteAudios  = $("remote-audios");
+
+// ── Utils ─────────────────────────────────────────────────────
+function fmtTime(ts){ const d=new Date(ts); return d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}); }
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function toast(msg){ toastEl.textContent=msg; toastEl.classList.add("show"); setTimeout(()=>toastEl.classList.remove("show"),2800); }
+function scrollBottom(smooth=true){ messagesEl.scrollTo({top:messagesEl.scrollHeight,behavior:smooth?"smooth":"instant"}); }
+
+// ── Room list ─────────────────────────────────────────────────
+function renderRooms(){
+  roomListEl.innerHTML="";
+  Object.entries(S.rooms).forEach(([id,room])=>{
+    const li=document.createElement("li");
+    li.className="room-item"+(id===S.currentRoom?" active":"");
+    li.dataset.id=id;
+    li.innerHTML=`<span class="room-emoji">${room.emoji}</span>
+      <div class="room-info"><div class="room-name">${room.name}</div><div class="room-desc">${room.description}</div></div>
+      <span class="room-count" id="rc-${id}">${S.counts[id]||0}</span>`;
+    li.addEventListener("click",()=>joinRoom(id));
+    roomListEl.appendChild(li);
+  });
+}
+
+function updateCounts(counts){
+  Object.assign(S.counts, counts);
+  Object.entries(counts).forEach(([id,n])=>{ const el=$(`rc-${id}`); if(el) el.textContent=n; });
+  if(S.currentRoom && counts[S.currentRoom]!==undefined) hdrCount.textContent=`${counts[S.currentRoom]} online`;
+}
+
+// ── Messages ──────────────────────────────────────────────────
+function appendMessage(msg, isHistory=false){
+  const w=$("welcome"); if(w) w.remove();
+  const div=document.createElement("div");
+  div.className="msg";
+  div.innerHTML=`<div class="msg-header">
+    <span class="msg-user${msg.username===S.myUsername?" is-me":""}">${esc(msg.username)}</span>
+    <span class="msg-time">${fmtTime(msg.ts)}</span>
+  </div><div class="msg-text">${esc(msg.text)}</div>`;
+  messagesEl.appendChild(div);
+  if(!isHistory) scrollBottom();
+}
+function appendSystem(text){
+  const w=$("welcome"); if(w) w.remove();
+  const div=document.createElement("div"); div.className="msg-system"; div.textContent=text;
+  messagesEl.appendChild(div); scrollBottom();
+}
+
+// ── Typing ─────────────────────────────────────────────────── 
+function renderTyping(){
+  const users=S.typingUsers[S.currentRoom];
+  if(!users||users.size===0){typingBarEl.innerHTML="";return;}
+  const names=[...users].slice(0,3);
+  typingBarEl.innerHTML=`<div class="typing-dots"><span></span><span></span><span></span></div>
+    <span>${esc(names.join(", "))} ${names.length===1?"is":"are"} typing</span>`;
+}
+
+function renderOnlineUsers(){
+  onlineListEl.innerHTML="";
+  const count=S.counts[S.currentRoom]||0;
+  const li=document.createElement("li"); li.className="online-user";
+  li.innerHTML=`<div class="online-dot"></div><span class="online-name is-me">${esc(S.myUsername||"…")}</span>`;
+  onlineListEl.appendChild(li);
+  if(count>1){
+    const li2=document.createElement("li"); li2.className="online-user";
+    li2.innerHTML=`<div class="online-dot" style="background:var(--text-faint)"></div><span class="online-name">+${count-1} anonymous</span>`;
+    onlineListEl.appendChild(li2);
+  }
+}
+
+// ── Join room ─────────────────────────────────────────────────
+function joinRoom(roomId){
+  if(roomId===S.currentRoom) return;
+  // Leave call if in one
+  if(S.inCall) leaveCall();
+  S.currentRoom=roomId;
+  messagesEl.innerHTML=""; typingBarEl.innerHTML="";
+  S.typingUsers[roomId]=new Set();
+  const room=S.rooms[roomId];
+  hdrEmoji.textContent=room.emoji; hdrName.textContent=room.name; hdrDesc.textContent=room.description;
+  hdrCount.style.display="flex"; hdrCount.textContent=`${S.counts[roomId]||0} online`;
+  inputEl.disabled=false; sendBtn.disabled=false; inputEl.focus();
+  renderRooms(); renderOnlineUsers();
+  S.socket.emit("join_room", roomId);
+}
+
+// ── Send message ──────────────────────────────────────────────
+function sendMessage(){
+  const text=inputEl.value.trim();
+  if(!text||!S.currentRoom) return;
+  S.socket.emit("send_message",{roomId:S.currentRoom,text});
+  inputEl.value=""; inputEl.style.height="44px"; stopTyping();
+}
+
+let isTyping=false;
+function startTyping(){ if(!S.currentRoom||isTyping) return; isTyping=true; S.socket.emit("typing_start",{roomId:S.currentRoom}); }
+function stopTyping(){ if(!isTyping) return; isTyping=false; if(S.currentRoom) S.socket.emit("typing_stop",{roomId:S.currentRoom}); }
+
+// ── CALL: render call bar ────────────────────────────────────
+function renderCallBar(info){
+  S.callInfo=info;
+  if(!S.currentRoom){ callBar.classList.remove("visible"); return; }
+  callBar.classList.add("visible");
+
+  if(info.active){
+    callBarInfo.innerHTML=`<strong>${info.count}</strong> in voice call`;
+    btnJoinCall.textContent = S.inCall ? "📵 Leave Call" : "📞 Join Call";
+    btnJoinCall.className   = S.inCall ? "in-call" : "";
+  } else {
+    callBarInfo.innerHTML = `No active call`;
+    btnJoinCall.textContent = "📞 Start Call";
+    btnJoinCall.className   = "";
+  }
+
+  // Participants
+  callPartsEl.innerHTML="";
+  info.participants.forEach(p=>{
+    const div=document.createElement("div");
+    div.className="call-avatar"; div.id=`avatar-${p.socketId}`;
+    div.innerHTML=`<div class="call-avatar-dot"></div><span>${esc(p.username)}</span>`;
+    callPartsEl.appendChild(div);
+  });
+
+  btnMute.className = S.inCall ? "visible" + (S.muted ? " muted" : "") : "";
+}
+
+// ── CALL: join ────────────────────────────────────────────────
+async function joinCall(){
+  if(!S.currentRoom) return;
+  try {
+    S.localStream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+  } catch(e){
+    toast("❌ Microphone access denied"); return;
+  }
+  S.inCall=true; S.muted=false;
+  btnMute.textContent="🎤 Mute";
+  S.socket.emit("call_join",{roomId:S.currentRoom});
+  appendSystem("You joined the voice call 🎤");
+  renderCallBar(S.callInfo||{active:true,count:1,participants:[]});
+}
+
+// ── CALL: leave ───────────────────────────────────────────────
+function leaveCall(){
+  if(!S.inCall) return;
+  S.inCall=false;
+  // Close all peers
+  Object.values(S.peers).forEach(pc=>pc.close());
+  S.peers={};
+  // Stop local stream
+  if(S.localStream){ S.localStream.getTracks().forEach(t=>t.stop()); S.localStream=null; }
+  // Remove all remote audios
+  remoteAudios.innerHTML="";
+  if(S.currentRoom){ S.socket.emit("call_leave",{roomId:S.currentRoom}); appendSystem("You left the voice call"); }
+  btnMute.className="";
+  if(S.callInfo) renderCallBar(S.callInfo);
+}
+
+// ── CALL: create peer ─────────────────────────────────────────
+function createPeer(remoteSocketId, initiator){
+  if(S.peers[remoteSocketId]){ S.peers[remoteSocketId].close(); }
+  const pc=new RTCPeerConnection(ICE_SERVERS);
+  S.peers[remoteSocketId]=pc;
+
+  // Add local tracks
+  if(S.localStream) S.localStream.getTracks().forEach(t=>pc.addTrack(t,S.localStream));
+
+  // ICE
+  pc.onicecandidate=e=>{ if(e.candidate) S.socket.emit("rtc_ice",{to:remoteSocketId,candidate:e.candidate}); };
+
+  // Remote audio
+  pc.ontrack=e=>{
+    let audio=$(`audio-${remoteSocketId}`);
+    if(!audio){ audio=document.createElement("audio"); audio.id=`audio-${remoteSocketId}`; audio.autoplay=true; remoteAudios.appendChild(audio); }
+    audio.srcObject=e.streams[0];
+  };
+
+  if(initiator){
+    pc.onnegotiationneeded=async()=>{
+      const offer=await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      S.socket.emit("rtc_offer",{to:remoteSocketId,offer:pc.localDescription});
+    };
+  }
+  return pc;
+}
+
+// ── Toggle mute ───────────────────────────────────────────────
+function toggleMute(){
+  if(!S.localStream) return;
+  S.muted=!S.muted;
+  S.localStream.getAudioTracks().forEach(t=>{ t.enabled=!S.muted; });
+  btnMute.textContent = S.muted ? "🔇 Unmute" : "🎤 Mute";
+  btnMute.className   = "visible" + (S.muted ? " muted" : "");
+}
+
+// ── Socket ─────────────────────────────────────────────────── 
+function connect(){
+  const socket=io(); S.socket=socket;
+
+  socket.on("identity",({username,rooms,counts})=>{
+    S.myUsername=username; S.rooms=rooms; S.counts=counts;
+    myUsernameEl.textContent=username; renderRooms();
+  });
+
+  socket.on("history",({roomId,messages})=>{
+    if(roomId!==S.currentRoom) return;
+    messagesEl.innerHTML="";
+    if(messages.length===0){ const e=document.createElement("div"); e.className="msg-system"; e.textContent="No messages yet. Say hello!"; messagesEl.appendChild(e); }
+    else messages.forEach(m=>appendMessage(m,true));
+    scrollBottom(false);
+  });
+
+  socket.on("new_message",({roomId,message})=>{
+    if(roomId!==S.currentRoom) return;
+    appendMessage(message);
+    const u=S.typingUsers[roomId]; if(u){ u.delete(message.username); renderTyping(); }
+  });
+
+  socket.on("room_count",({roomId,count})=>{ updateCounts({[roomId]:count}); if(roomId===S.currentRoom) renderOnlineUsers(); });
+  socket.on("all_counts",counts=>{ updateCounts(counts); if(S.currentRoom) renderOnlineUsers(); });
+  socket.on("user_joined",({username,roomId})=>{ if(roomId===S.currentRoom&&username!==S.myUsername) appendSystem(`${username} joined`); });
+  socket.on("user_left",({username,roomId})=>{ if(roomId===S.currentRoom) appendSystem(`${username} left`); });
+  socket.on("typing_start",({username,roomId})=>{ if(roomId!==S.currentRoom) return; if(!S.typingUsers[roomId]) S.typingUsers[roomId]=new Set(); S.typingUsers[roomId].add(username); renderTyping(); });
+  socket.on("typing_stop",({username,roomId})=>{ if(roomId!==S.currentRoom) return; if(S.typingUsers[roomId]) S.typingUsers[roomId].delete(username); renderTyping(); });
+
+  // ── Call events ─────────────────────────────────────────────
+  socket.on("call_update", info=>{ renderCallBar(info); });
+
+  socket.on("call_existing_participants",({participants})=>{
+    // I just joined — create offers to everyone already in call
+    participants.forEach(p=>{
+      const pc=createPeer(p.socketId, true);
+      // trigger negotiation
+      if(S.localStream) S.localStream.getTracks().forEach(t=>pc.addTrack(t,S.localStream));
+    });
+  });
+
+  socket.on("call_user_joined",({socketId,username})=>{
+    if(!S.inCall) return;
+    // They'll send us an offer via call_existing_participants flow
+    appendSystem(`${username} joined the call 🎤`);
+  });
+
+  socket.on("call_user_left",({socketId,username})=>{
+    if(S.peers[socketId]){ S.peers[socketId].close(); delete S.peers[socketId]; }
+    const audio=$(`audio-${socketId}`); if(audio) audio.remove();
+    appendSystem(`${username} left the call`);
+  });
+
+  socket.on("rtc_offer",async({from,username,offer})=>{
+    if(!S.inCall) return;
+    const pc=createPeer(from, false);
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer=await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit("rtc_answer",{to:from,answer:pc.localDescription});
+  });
+
+  socket.on("rtc_answer",async({from,answer})=>{
+    const pc=S.peers[from]; if(!pc) return;
+    await pc.setRemoteDescription(new RTCSessionDescription(answer));
+  });
+
+  socket.on("rtc_ice",async({from,candidate})=>{
+    const pc=S.peers[from]; if(!pc) return;
+    try{ await pc.addIceCandidate(new RTCIceCandidate(candidate)); }catch(e){}
+  });
+
+  socket.on("disconnect",()=>toast("Connection lost. Reconnecting…"));
+  socket.on("connect",()=>{ if(S.myUsername) toast("Reconnected ✓"); });
+}
+
+// ── Event listeners ───────────────────────────────────────────
+inputEl.addEventListener("keydown",e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
+inputEl.addEventListener("input",()=>{
+  inputEl.style.height="44px"; inputEl.style.height=Math.min(inputEl.scrollHeight,120)+"px";
+  if(inputEl.value.trim()){ startTyping(); clearTimeout(S.typingTimer); S.typingTimer=setTimeout(stopTyping,2500); }
+  else{ clearTimeout(S.typingTimer); stopTyping(); }
+});
+sendBtn.addEventListener("click", sendMessage);
+btnJoinCall.addEventListener("click",()=>{ if(S.inCall) leaveCall(); else joinCall(); });
+btnMute.addEventListener("click", toggleMute);
+
+connect();
+</script>
+</body>
+</html>
